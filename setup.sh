@@ -10,7 +10,8 @@ python3 -m pip install install psycopg2-binary python-dateutil openpyxl ovh
 # Generate our DB password
 db_pass=$(< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-32})
 # Generate our config file
-tee db.conf <<EOF 2>&1 > /dev/null
+mkdir /etc/cloudcost/
+tee /etc/cloudcost/cloudcost.conf <<EOF 2>&1 > /dev/null
 [database]
 host = 127.0.0.1
 port = 5432

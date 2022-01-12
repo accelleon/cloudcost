@@ -183,10 +183,11 @@ def add_account(cur, provider):
 
 def main(args):
     # Connect to our postgres database
+    conn = None
     try:
         # Read in our config file
         conf = configparser.ConfigParser()
-        conf.read("cloudcost.conf")
+        conf.read("/etc/cloudcost/cloudcost.conf")
 
         # Directly pass the config file as argument
         # ** formats it to pass the dictionary as named arguments
