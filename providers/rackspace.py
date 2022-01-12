@@ -26,7 +26,10 @@ def cost(account_name, api_key, billing_number) -> "list[CostItem]":
 
 	# Do the auth
 	x = requests.post(auth_endpoint, headers = headers, data = data)
-	token = json.loads(x.text)['access']['token']['id']
+	js = json.loads(x.text)
+	if not x.ok:
+		raise Exception(f'Rackspace {account_name} auth failure: {json.dumps(js,indent=4)}')
+	token = js['access']['token']['id']
 
 	# Form the request for estimated charges
 	headers = {
@@ -38,6 +41,9 @@ def cost(account_name, api_key, billing_number) -> "list[CostItem]":
 	url = billing_endpoint.format(ran=billing_number)
 	x = requests.get(url, headers= headers)
 	js = json.loads(x.text)
+	if not x.ok:
+		raise Exception(f'Rackspace {account_name} estimated_charges failed:\n\
+      		{json.dumps(js,indent=4)}')
 
 	# This should result in estimated total for the current billing cycle
 	ret = [

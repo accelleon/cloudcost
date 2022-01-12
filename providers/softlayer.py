@@ -64,6 +64,9 @@ def NextBilling(account_name, api_key) -> CostItem:
 
     x = requests.get(api_getNextInvoiceTopLevel, auth=auth, params=paramsTopLevel)
     topLevel = json.loads(x.text)
+    if not x.ok:
+        raise Exception(f'Softlayer {account_name}: getNextInvoiceTopLevel Failed:\n\
+            {json.dumps(topLevel, indent=4)}')
     startDate = topLevel[0]['cycleStartDate']
     endDate = topLevel[0]['nextBillDate']
 
@@ -80,8 +83,11 @@ def NextBilling(account_name, api_key) -> CostItem:
         total += float(item['recurringFee'])
         x = requests.get(api_getChildren.format(id=item['id']), auth=auth, params=paramsChildren)
         children = json.loads(x.text)
+        if not x.ok:
+            raise Exception(f'Softlayer {account_name}: getChildren Failed:\n\
+                {json.dumps(children, indent=4)}')
         for child in children:
-            total += float(child['recurringFee'])         
+            total += float(child['recurringFee'])
 
     return CostItem(total, startDate, endDate)
 
@@ -109,6 +115,9 @@ def PrevBilling(account_name, api_key) -> CostItem:
     # Grab the previous invoice
     x = requests.get(api_getPrevInvoice, auth=auth)
     js = json.loads(x.text)
+    if not x.ok:
+        raise Exception(f'Softlayer {account_name}: getPrevInvoice Failed:\n\
+            {json.dumps(js, indent=4)}')
     # Need id and invoice creation date (billing period end date)
     invoice = js['id']
     endDate = js['createDate']
@@ -116,6 +125,9 @@ def PrevBilling(account_name, api_key) -> CostItem:
     # Pull top level items for that invoice
     x = requests.get(api_getInvoiceTopLevel.format(id=invoice), auth=auth, params=paramsTopLevel)
     topLevel = json.loads(x.text)
+    if not x.ok:
+        raise Exception(f'Softlayer {account_name}: getPrevInvoice Failed:\n\
+            {json.dumps(js, indent=4)}')
 
     # Mask for calls to getChildren
     paramsChildren = {
@@ -128,8 +140,11 @@ def PrevBilling(account_name, api_key) -> CostItem:
         total += float(item['recurringFee'])
         x = requests.get(api_getInvoiceChildren.format(id=item['id']), auth=auth, params=paramsChildren)
         children = json.loads(x.text)
+        if not x.ok:
+            raise Exception(f'Softlayer {account_name}: getChildren Failed:\n\
+                {json.dumps(children, indent=4)}')
         for child in children:
-            total += float(child['recurringFee'])         
+            total += float(child['recurringFee'])
 
     return CostItem(total, "", endDate)
 

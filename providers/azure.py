@@ -19,7 +19,12 @@ def cost(account_name, password, subscription, client_id, tenant_id) -> "list[Co
 
     # Do the auth, grab the token
     x = requests.post(auth_endpoint.format(tenant_id=tenant_id), data=data)
-    token = json.loads(x.text)['access_token']
+    js = json.loads(x.text)
+    if not x.ok:
+        raise Exception(f'Azure {account_name} authentication failed:\n\
+            {json.dumps(js,indent=4)}')
+    
+    token = js['access_token']
 
     # Headers
     headers = {
@@ -48,6 +53,9 @@ def cost(account_name, password, subscription, client_id, tenant_id) -> "list[Co
         # We already appended the parameters above
         x = requests.get(next_url, headers=headers)
         js = json.loads(x.text)
+        if not x.ok:
+            raise Exception(f'Azure {account_name} API Call Failed:\n\
+                {json.loads(x.text)}')
 
         # Loop through the returned itemized JSON and total
         [total := total + i['properties']['paygCostInUSD'] for i in js['value']]

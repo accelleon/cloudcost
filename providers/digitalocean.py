@@ -17,6 +17,9 @@ def cost(account_name, api_key) -> "list[CostItem]":
 	}
 
 	resp = requests.get(endpoint, headers=headers)
+	if not resp.ok:
+		raise Exception(f'Digital Ocean {account_name}: API Call Failed\n\
+      		{json.dumps(resp.json(),indent=4)}')
  
 	# Generate our start and end dates, this is always 1st to 1st for DO
 	ret = [

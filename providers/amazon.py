@@ -41,9 +41,14 @@ def cost(account_name, access_key_id, secret_access_key) -> "list[CostItem]":
 			capture_output = True,
 			text = True,
 		)
-
+ 
 	# Parse as json, makes my life easy
 	js = json.loads(ret.stdout)
+ 
+	if ret.returncode is not 0:
+		raise Exception(f'Amazon {account_name} process call get-cost-and-usage failed:\n\
+      		{json.dumps(js, indent=4)}')
+
 	ret = [
      CostItem(js['ResultsByTime'][0]['Total']['BlendedCost']['Amount'],
               first_day,

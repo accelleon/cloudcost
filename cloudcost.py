@@ -104,29 +104,33 @@ def run_cost(cur):
             rows = cur.fetchall()
 
             for row in rows:
-                # Call out to provider module's cost() function
-                costs = module.cost(**row)
+                # Make sure exceptions raised in cost() don't kill
+                try:
+                    # Call out to provider module's cost() function
+                    costs = module.cost(**row)
 
-                # Spill to excel
-                # Since we now return a list of CostItems to accomodate for
-                # Bluemix and Softlayer returning both previous and current billing
-                # periods, loop through the list of CostItems returned
-                # TODO: Gotta be a neater way to do this
-                for cost in costs:
-                    ws[f'A{i}'] = provider
-                    # Split the string, if it contains more than a date, we only want the date
-                    ws[f'B{i}'] = cost.startDate[:10]
-                    ws[f'C{i}'] = cost.endDate[:10]
-                    ws[f'D{i}'] = row['account_name']
-                    ws[f'E{i}'] = round(float(cost.cost), 2)
-                    i = i + 1
+                    # Spill to excel
+                    # Since we now return a list of CostItems to accomodate for
+                    # Bluemix and Softlayer returning both previous and current billing
+                    # periods, loop through the list of CostItems returned
+                    # TODO: Gotta be a neater way to do this
+                    for cost in costs:
+                        ws[f'A{i}'] = provider
+                        # Split the string, if it contains more than a date, we only want the date
+                        ws[f'B{i}'] = cost.startDate[:10]
+                        ws[f'C{i}'] = cost.endDate[:10]
+                        ws[f'D{i}'] = row['account_name']
+                        ws[f'E{i}'] = round(float(cost.cost), 2)
+                        i = i + 1
 
-                print("{} total cost to month is {}".format(row['account_name'], cost))
+                    print("{} total cost to month is {}".format(row['account_name'], cost))
+                except Exception as err:
+                    print(err)
 
-        # For now die here, need to find what exceptions can be thrown here
+        # Two things can lead here, module import failing and sql query failure
+        # Skip this provider in this case
         except BaseException as err:
             print(f"Unexpected {err=}, {type(err)=}")
-            raise
 
     # Save to the workbook
     fname = "/tmp/cloudcost{}.xlsx".format(datetime.today().strftime("%Y-%m-%d"))
