@@ -41,6 +41,9 @@ def upload_file(file, server, channel_id, token):
     print("Uploading...")
     x = requests.post(f'{server}/api/v4/files', headers=headers, params=payload, data=open(file, 'rb'))
     js = json.loads(x.text)
+    if not x.ok:
+        raise(f'Failed to upload {file}. Response:\n\
+            {json.dumps(js,indent=4)}')
     upload_id = js['file_infos'][0]['id']
 
     # Payload for post, attach the file we just uploaded
@@ -52,7 +55,10 @@ def upload_file(file, server, channel_id, token):
 
     # Post the file
     print("Done.")
-    response = requests.post(f'{server}/api/v4/posts', headers=headers, json=payload)
+    x = requests.post(f'{server}/api/v4/posts', headers=headers, json=payload)
+    if not x.ok:
+        raise(f'Failed to post message. Response:\n\
+            {json.dumps(x.json(),indent=4)}')
 
 # Creates some headers for the excel sheet
 def create_xlsx():
@@ -203,7 +209,22 @@ def main(args):
                 add_account(cur, args.add)
             else:
                 fname = run_cost(cur)
-                upload_file(fname, **conf['mattermost'])
+                # Retry upload 5 times
+                for i in range(5):
+                    try:
+                        upload_file(fname, **conf['mattermost'])
+                    except Exception as err:
+                        # Failed but we have retries left
+                        if i < 4:
+                            # Print and continue
+                            print(err)
+                            continue
+                        else:
+                            # Retries exceeded, pass the exception up
+                            raise
+                    else:
+                        # Success, break from retry loop
+                        break
 
     # Did we screw up connecting to database?
     except (Exception, psycopg2.DatabaseError) as error:
@@ -212,7 +233,6 @@ def main(args):
     # Some other non-recoverable exception
     except BaseException as err:
         print(f"Unexpected {err=}, {type(err)=}")
-        raise
 
     finally:
         # Need to clean up connection if made it
