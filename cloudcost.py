@@ -129,7 +129,7 @@ def run_cost(cur):
                         ws[f'E{i}'] = round(float(cost.cost), 2)
                         i = i + 1
 
-                    print("{} total cost to month is {}".format(row['account_name'], cost))
+                        print("{} total cost to month is {}".format(row['account_name'], cost))
                 except Exception as err:
                     print(err)
 
