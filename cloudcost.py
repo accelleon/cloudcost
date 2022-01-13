@@ -1,4 +1,5 @@
 # PSQL stuff
+import errno
 import psycopg2
 import psycopg2.extras
 from psycopg2 import sql
@@ -190,7 +191,7 @@ def add_account(cur, **kwargs):
         cur.execute(create)
         
         # Make sure account doesn't already exist
-        query = sql.SQL("select top 1 from {table} where account_name = {account}").format(
+        query = sql.SQL("select * from {table} where account_name = {account}").format(
                 table = sql.Identifier(provider),
                 account = sql.Literal(account)
             )
@@ -239,7 +240,7 @@ def update_account(cur, **kwargs):
         cols = argspec[0]
         
         # Make sure account exists
-        query = sql.SQL("select top 1 from {table} where account_name = {account}").format(
+        query = sql.SQL("select * from {table} where account_name = {account}").format(
                 table = sql.Identifier(provider),
                 account = sql.Literal(account)
             )
@@ -312,6 +313,24 @@ def list_account(cur, **kwargs):
             
             for row in rows:
                 print(f"{provider}: {row['account_name']}")
+                
+def remove_account(cur, **kwargs):
+    args = kwargs['args']
+    provider = args.iaas
+    account = args.account
+    try:
+        query = sql.SQL("delete from {table} where account_name = {account}").format(
+            table = sql.Identifier(provider),
+            account = sql.Literal(account)
+        )
+        cur.execute(query)
+        if cur.statusmessage != 'DELETE 1\n':
+            print(f"Failed to remove {account} from {provider}")
+        else:
+            print(f"Successful")
+        cur.connection.commit()
+    except Exception as err:
+        print(err)
 
 def main(args):
     # Connect to our postgres database
@@ -375,6 +394,7 @@ if __name__ == '__main__':
     sub_remove = subparsers.add_parser('remove', help='remove an account')
     sub_remove.add_argument('--iaas', type=str, required=True, help='iaas to remove account from')
     sub_remove.add_argument('--account', type=str, required=True, help='account name to remove')
+    sub_remove.set_defaults(func=remove_account)
 
     args = parser.parse_args()
 
