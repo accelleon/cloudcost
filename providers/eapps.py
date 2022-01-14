@@ -6,6 +6,7 @@ from dateutil.relativedelta import relativedelta
 from providers.base import CostItem
 
 billing_endpoint = "https://app.jelastic.eapps.com/1.0/billing/account/rest/getaccountbillinghistorybyperiod"
+account_endpoint = "https://app.jelastic.eapps.com/1.0/billing/account/rest/getaccount"
 
 def cost(account_name, api_key) -> "list[CostItem]":
     headers = {
@@ -38,13 +39,24 @@ def cost(account_name, api_key) -> "list[CostItem]":
     # We need to add together cost for each item
     total = 0
     [total := total + i['cost'] for i in js['array']]
+    
+    # Grab our account balance
+    data = {
+        'appid': '1dd8d191d38fff45e62564fcf67fdcd6',
+        'session': api_key,
+    }
+    x = requests.get(account_endpoint, headers=headers, params=data)
+    js = json.loads(x.text)
+    # Grab balance do formatting here since we're special
+    balance = f"{round(float(js['balance']),2):.2f} USD"
 
     # Generate our return list
     ret = [
         CostItem(
             total,
             first_day,
-            last_day
+            last_day,
+            balance
         )
     ]
     return ret

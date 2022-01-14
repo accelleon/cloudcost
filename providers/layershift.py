@@ -7,6 +7,7 @@ from currency_converter import CurrencyConverter
 from providers.base import CostItem
 
 billing_endpoint = "https://app.j.layershift.co.uk/1.0/billing/account/rest/getaccountbillinghistorybyperiod"
+account_endpoint = "https://app.j.layershift.co.uk/1.0/billing/account/rest/getaccount"
 
 def cost(account_name, api_key) -> "list[CostItem]":
     headers = {
@@ -40,6 +41,16 @@ def cost(account_name, api_key) -> "list[CostItem]":
     # List comprehension faster than sum(map())
     gbp = 0
     [gbp := gbp + i['cost'] for i in js['array']]
+    
+    # Grab our account balance
+    data = {
+        'appid': '1dd8d191d38fff45e62564fcf67fdcd6',
+        'session': api_key,
+    }
+    x = requests.get(account_endpoint, headers=headers, params=data)
+    js = json.loads(x.text)
+    # Grab balance do formatting here since we're special
+    balance = f"{round(float(js['balance']),2):.2f} GBP"
 
     # Layershift reports in GBP, convert to USD
     c = CurrencyConverter()
@@ -48,7 +59,8 @@ def cost(account_name, api_key) -> "list[CostItem]":
         CostItem(
             c.convert(gbp, 'GBP', 'USD'),
             first_day,
-            last_day
+            last_day,
+            balance
         )
     ]
     return ret

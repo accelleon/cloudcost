@@ -75,7 +75,7 @@ def create_xlsx():
 
     # Reporting dates
     ws['A1'] = 'Report Made:'
-    ws['B1'] = datetime.today().replace(day=1)
+    ws['B1'] = datetime.today()
     ws['B1'].number_format = 'yyyy-mm-dd'
 
     # Headers
@@ -84,6 +84,7 @@ def create_xlsx():
     ws['C3'] = 'Billing End'
     ws['D3'] = 'Account Name'
     ws['E3'] = 'Current Invoice'
+    ws['F3'] = 'Balance'
 
     # Return workbook, worksheet, starting row index
     return wb, ws, 4
@@ -131,7 +132,8 @@ def run_cost(cur, **kwargs):
                         ws[f'B{i}'] = cost.startDate[:10]
                         ws[f'C{i}'] = cost.endDate[:10]
                         ws[f'D{i}'] = row['account_name']
-                        ws[f'E{i}'] = round(float(cost.cost), 2)
+                        ws[f'E{i}'] = f"{round(float(cost.cost), 2):.2f}"
+                        ws[f'F{i}'] = cost.balance
                         i = i + 1
 
                         print("{} total cost to month is {}".format(row['account_name'], cost))

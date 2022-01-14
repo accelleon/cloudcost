@@ -2,7 +2,7 @@ from collections import namedtuple
 
 # This is the namedtupled that is expected as return from cost()
 # Generate cost, startDate, and endDate as members
-CostItem = namedtuple("CostItem", "cost startDate endDate")
+CostItem = namedtuple("CostItem", "cost startDate endDate balance", defaults=(None,) * 4)
 
 # All providers *must* implement a single entry method cost()
 # This method cost *must* have at least 1 parameter account_name
