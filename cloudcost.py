@@ -239,7 +239,8 @@ def update_account(cur, **kwargs):
         # Get argument names from module's run command
         argspec = inspect.getfullargspec(module.cost)
         # argspec[0] is a list of names of standard arguments
-        cols = argspec[0]
+        # In this case just remove account_name from the list since we won't touch it
+        cols = filter(lambda a: a != 'account_name', argspec[0])
         
         # Make sure account exists
         query = sql.SQL("select * from {table} where account_name = {account}").format(
@@ -251,28 +252,37 @@ def update_account(cur, **kwargs):
         if cur.fetchone() is None:
             print(f'{account} does not exist in {provider}, use the add add command')
             return
-        
-        # prompt user for each argument we'll need for cost
-        vals = list(map(lambda a: getpass("{}: ".format(a)),
-                   filter(lambda a: a != 'account_name',cols))) # Skip prompting account_name
-        # Push our account_name onto the top
-        vals.insert(0, account)
 
-        # Build arbritary replace using the psycopg2 sql extension
-        # Need to convert everything into Identifier and Literal for this to work so map cols and vals
-        replace = sql.SQL("replace into {table}({columns}) VALUES ({values})").format(
+        # Update base query
+        update = sql.SQL("update {table} set {column} = {val} where account_name = {account}")
+        # Loop through each parameter and update the value
+        for col_name in cols:
+            # Format query
+            val = getpass("{}: ".format(col_name))
+            query = update.format(
                 table = sql.Identifier(provider),
-                columns = sql.SQL(',').join(map(lambda a: sql.Identifier(a), cols)),
-                values = sql.SQL(',').join(map(lambda a: sql.Literal(a), vals)))
+                column = sql.Identifier(col_name),
+                val = sql.Literal(val),
+                account = sql.Literal(account)
+            )
 
-        # Execute query and commit change
-        cur.execute(replace)
-        cur.connection.commit()
+            # Execute the query
+            cur.execute(query)
+
+            # Error check, ensure 1 row updated
+            if cur.rowcount != 1:
+                raise Exception(f"Insert failed: {query}")
 
     # For now die here, need to find what exceptions can be thrown here
     except BaseException as err:
-            print(f"Unexpected {err=}, {type(err)=}")
-            raise
+        # Rollback here since we failed, pass exception up
+        cur.connection.rollback()
+        print(f"Unexpected {err=}, {type(err)=}")
+        raise
+
+    else:
+        # Commit the changes only if we succeeded the try block
+        cur.connection.commit()
 
 # List either providers available or accounts (optionally in provider)
 def list_account(cur, **kwargs):
