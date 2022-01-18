@@ -315,21 +315,25 @@ def list_account(cur, **kwargs):
             
             for row in rows:
                 print(f"{provider}: {row['account_name']}")
-                
+
+# Remove an account from the DB
 def remove_account(cur, **kwargs):
     args = kwargs['args']
     provider = args.iaas
     account = args.account
+    # Wrap in a try block, no exceptions should ever be thrown here but in case
     try:
+        # Build our query
         query = sql.SQL("delete from {table} where account_name = {account}").format(
             table = sql.Identifier(provider),
             account = sql.Literal(account)
         )
+        # Run, check # of rows deleted to check for success
         cur.execute(query)
-        if cur.statusmessage != 'DELETE 1\n':
+        if cur.rowcount <= 0:
             print(f"Failed to remove {account} from {provider}")
         else:
-            print(f"Successful")
+            print(f"Success: {cur.statusmessage}")
         cur.connection.commit()
     except Exception as err:
         print(err)
