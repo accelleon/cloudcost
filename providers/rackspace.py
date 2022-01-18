@@ -48,7 +48,7 @@ def cost(account_name, api_key, billing_number) -> "list[CostItem]":
 	# This should result in estimated total for the current billing cycle
 	ret = [
 		CostItem(
-			js['estimatedCharges']['total'],
+			js['estimatedCharges']['chargeTotal'],
 			js['estimatedCharges']['currentBillingPeriodStartDate'],
 			js['estimatedCharges']['currentBillingPeriodEndDate']
 		)
