@@ -47,6 +47,8 @@ def cost(account_name, api_key) -> "list[CostItem]":
     }
     x = requests.get(account_endpoint, headers=headers, params=data)
     js = json.loads(x.text)
+    if not x.ok:
+        raise Exception(f'Eapps {account_name} getaccount failed\n{json.dumps(js,indent=4)}')
     # Grab balance do formatting here since we're special
     balance = f"{round(float(js['balance']),2):.2f} USD"
 
