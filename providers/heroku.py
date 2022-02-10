@@ -21,8 +21,7 @@ def cost(account_name, api_key) -> "list[CostItem]":
     x = requests.get(api_url, headers=headers)
     js = json.loads(x.text)
     if not x.ok:
-        raise Exception(f'Heroku {account_name} invoices failed:\n\
-            {json.dumps(js,indent=4)}')
+        raise Exception(f'API call failed:\n{json.dumps(js,indent=4)}')
     for i in js:
         if month in i['period_start']:
             # For some damn reason heroku returns this * 100

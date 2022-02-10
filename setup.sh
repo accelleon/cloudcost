@@ -31,6 +31,8 @@ sudo -u postgres `psql -d postgres -c "grant all privileges on database cloudcos
 
 sudo -u postgres `psql -d postgres -c "grant all privileges on all tables in schema public to cloudcost;"`
 
+python3 ./cloudcost.py install
+
 # Install AWS Cli
 mkdir aws
 cd aws

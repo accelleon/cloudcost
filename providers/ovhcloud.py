@@ -1,18 +1,57 @@
-import requests
 import json
-
-from providers.base import CostItem
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 # OVH does some unique shit like signing API requests so cave to their SDK
 import ovh
 
+if __name__ != '__main__':
+    from providers.base import CostItem
+else:
+    from base import CostItem
+
 def cost(account_name, endpoint, app_key, app_secret, consumer_key):
-	client = ovh.Client(
-		endpoint=endpoint,
-		application_key=app_key,
-		application_secret=app_secret,
-		consumer_key=consumer_key)
+    first_day = datetime.today().replace(day=1,hour=0,minute=0,second=0,microsecond=0).isoformat()
+    last_day = (datetime.today()+relativedelta(months=1, day=1)).replace(hour=0,minute=0,second=0,microsecond=0).isoformat()
+    
+    client = ovh.Client(
+        endpoint=endpoint,
+        application_key=app_key,
+        application_secret=app_secret,
+        consumer_key=consumer_key)
 
-	usage = client.get('/me/consumption/usage/history')
+    usage = client.get('/me/consumption/usage/forecast',
+                       beginDate=first_day,
+                       endDate=last_day)
+    
+    print(json.dumps(usage, indent=4))
+    nextBilling = usage[0]['price']['value']
+    
+    # OVH will return this is a bloody RANDOM order
+    # and has no endpoint for the latest bill
+    # loop through all of them and compare the dates
+    bills = client.get('/me/bill')
+    prevBilling = None
+    billDate = None
+    
+    for billid in bills:
+        bill = client.get(f'/me/bill/{billid}')
+        ptime = datetime.fromisoformat(bill['date'])
+        if billDate is None or ptime > billDate:
+            billDate = ptime
+            prevBilling = bill
 
-	print(json.dumps(usage, indent=4))
+    # This should result in estimated total for the current billing cycle
+    ret = [
+        CostItem(
+            nextBilling,
+            first_day,
+            last_day,
+        ),
+        CostItem(
+            prevBilling['priceWithTax']['value'],
+            None,
+            prevBilling['date']
+        )
+    ]
+    return ret

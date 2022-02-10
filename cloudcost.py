@@ -17,12 +17,13 @@ from os import path
 import json
 import os
 from pathlib import Path
+import subprocess
 
 # XLSX support
 from openpyxl import Workbook
 
 # Upload file to mattermost
-def upload_file(file, server, channel_id, token):
+def upload_file(file, server, channel_id, token, failed):
     # Simple auth header
     headers = {
         'Authorization': f'Bearer {token}',
@@ -53,7 +54,7 @@ def upload_file(file, server, channel_id, token):
     # Payload for post, attach the file we just uploaded
     payload = {
             'channel_id': channel_id,
-            'message': 'Today\'s cloud cost!',
+            'message': '\n### Today\'s cloud cost!',
             'file_ids': [upload_id]
         }
 
@@ -63,7 +64,82 @@ def upload_file(file, server, channel_id, token):
     if not x.ok:
         raise(f'Failed to post message. Response:\n\
             {json.dumps(x.json(),indent=4)}')
-
+        
+def post_machines(providers, server, channel_id, token):
+    # Simple auth header
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type':'application/json'
+    }
+    
+    # Create our attachments for the message, MM has slack style attachments
+    attachments = []
+    for iaas, vms in providers.items():
+        for vm, info in vms.items():
+            attachment = {
+                'fallback': f"{vm} was billed for {info['hours']} hours in {iaas}",
+                'title': 'You have been billed for a VM alive longer than 7 days',
+                'color': '#FF0000',
+                'fields': [
+                    {'short': True, 'title': 'VM Name', 'value': vm},
+                    {'short': True, 'title': '', 'value': ''},
+                    {'short': True, 'title': 'Provider', 'value': iaas},
+                    {'short': True, 'title': 'Account', 'value': info['account']},
+                    {'short': True, 'title': 'Bill/Invoice', 'value': info['bill']},
+                    {'short': True, 'title': 'Hours Billed', 'value': f"{round(float(info['hours']), 2):.2f}"},
+                ]
+            }
+            attachments.append(attachment)
+    
+    # Set up our message payload & send
+    payload = {
+        'channel_id': channel_id,
+        'message': '# Machines billed for > 7 days',
+        'props': {
+            'attachments': attachments
+        }
+    }
+    
+    x = requests.post(f'{server}/api/v4/posts', headers=headers, json=payload)
+    if not x.ok:
+        raise(f'Failed to post message. Response:\n\
+            {json.dumps(x.json(),indent=4)}')
+        
+def post_failures(failures, server, channel_id, token):
+    # Auth headers
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type':'application/json'
+    }
+    
+    # Create our attachments for the message, MM has slack style attachments
+    attachments = []
+    for fail in failures:
+        attachment = {
+            'fallback': f"{fail['name']} in {fail['iaas']} failed",
+            'title': 'An account has failed to report',
+            'color': '#FF0000',
+            'fields': [
+                {'short': True, 'title': 'Provider', 'value': fail['iaas']},
+                {'short': True, 'title': 'Account', 'value': fail['name']},
+                {'short': False, 'title': 'Error', 'value': f"```\n{fail['error']}\n```"},
+            ]
+        }
+        attachments.append(attachment)
+    
+    # Set up our message payload & send
+    payload = {
+        'channel_id': channel_id,
+        'message': '# Failures',
+        'props': {
+            'attachments': attachments
+        }
+    }
+    
+    x = requests.post(f'{server}/api/v4/posts', headers=headers, json=payload)
+    if not x.ok:
+        raise(f'Failed to post message. Response:\n\
+            {json.dumps(x.json(),indent=4)}')
 # Creates some headers for the excel sheet
 def create_xlsx():
     # Workbook object
@@ -91,68 +167,120 @@ def create_xlsx():
 
 # Queries DB and runs cost against all accounts, all providers
 def run_cost(cur, **kwargs):
+    args = kwargs['args']
     conf = kwargs['conf']
+    
+    if args.nopost:
+        print('Not Posting.')
+    
     # Set up our workbook
     wb, ws, i = create_xlsx()
 
     # Grab a list of all tables in the DB (should be a list of provider names)
     # this is postgresql specific
-    cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+    cur.execute("select iaas, name, cred from get_accounts();")
 
     # fetchall() will return us a dictionary of lists
-    # we only want the first value of each list
-    tables = cur.fetchall()
-    providers = map(lambda a: a[0], tables)
+    accounts = cur.fetchall()
 
     # Now we loop through each provider
-    for provider in providers:
+    failed = []
+    vms = {}
+    for account in accounts:
+        provider = account['iaas']
+        name = account['name']
         try:
             # Import a module named with the provider from the providers directory
             module = importlib.import_module("providers.{}".format(provider))
 
-            # This is why we chose a dict cursor
-            # Simply read a row and pass the entire dict to the module.cost(**kwargs) function
-            cur.execute("SELECT * FROM {}".format(provider))
-            rows = cur.fetchall()
+            # Call out to provider module's cost() function
+            costs = module.cost(name, **account['cred'])
+            
+            # Wrap in another try block so we don't kill cost if this fails
+            try:
+                # Only run if start of new billing cycle
+                today = datetime.utcnow().isoformat()
+                if hasattr(module, 'life') and cost.startDate[:10] == today[:10]:
+                    pvms = module.life(name, **account['cred'])
+                
+                    if len(pvms) > 0:
+                        vms[account] = pvms
+            except Exception as err:
+                print(f"Failed to run life() on {provider}{name}: {err}")
 
-            for row in rows:
-                # Make sure exceptions raised in cost() don't kill
-                try:
-                    # Call out to provider module's cost() function
-                    costs = module.cost(**row)
+            # Spill to excel
+            # Since we now return a list of CostItems to accomodate for
+            # Bluemix and Softlayer returning both previous and current billing
+            # periods, loop through the list of CostItems returned
+            # TODO: Gotta be a neater way to do this
+            for cost in costs:
+                ws[f'A{i}'] = provider
+                # Split the string, if it contains more than a date, we only want the date
+                ws[f'B{i}'] = cost.startDate[:10]
+                ws[f'C{i}'] = cost.endDate[:10]
+                ws[f'D{i}'] = name
+                ws[f'E{i}'] = f"{round(float(cost.cost), 2):.2f}"
+                ws[f'F{i}'] = cost.balance
+                i = i + 1
 
-                    # Spill to excel
-                    # Since we now return a list of CostItems to accomodate for
-                    # Bluemix and Softlayer returning both previous and current billing
-                    # periods, loop through the list of CostItems returned
-                    # TODO: Gotta be a neater way to do this
-                    for cost in costs:
-                        ws[f'A{i}'] = provider
-                        # Split the string, if it contains more than a date, we only want the date
-                        ws[f'B{i}'] = cost.startDate[:10]
-                        ws[f'C{i}'] = cost.endDate[:10]
-                        ws[f'D{i}'] = row['account_name']
-                        ws[f'E{i}'] = f"{round(float(cost.cost), 2):.2f}"
-                        ws[f'F{i}'] = cost.balance
-                        i = i + 1
+                print("{} total cost to month is {}".format(name, cost))
 
-                        print("{} total cost to month is {}".format(row['account_name'], cost))
-                except Exception as err:
-                    print(err)
 
         # Two things can lead here, module import failing and sql query failure
         # Skip this provider in this case
         except BaseException as err:
-            print(f"Unexpected {err=}, {type(err)=}")
+            print(f"{provider} {name} Failed with {err}")
+            failed.append({'iaas': provider, 'name': name, 'error': err})
 
     # Save to the workbook
     fname = "/tmp/cloudcost{}.xlsx".format(datetime.today().strftime("%Y-%m-%d"))
     wb.save(fname)
 
+    if args.nopost:
+        return
+
+    # Try posting our failed accounts
+    if len(failed) > 0:
+        # Retry upload 5 times
+        for i in range(5):
+            try:
+                post_failures(failed, **conf['mattermost'])
+            except Exception as err:
+                # Failed but we have retries left
+                if i < 4:
+                    # Print and continue
+                    print(err)
+                    continue
+                else:
+                    # Retries exceeded, pass the exception up
+                    raise
+            else:
+                # Success, break from retry loop
+                break
+        
+    # Try posting our VM lifetimes
+    if len(vms) > 0:
+        # Retry upload 5 times
+        for i in range(5):
+            try:
+                post_machines(vms, **conf['mattermost'])
+            except Exception as err:
+                # Failed but we have retries left
+                if i < 4:
+                    # Print and continue
+                    print(err)
+                    continue
+                else:
+                    # Retries exceeded, pass the exception up
+                    raise
+            else:
+                # Success, break from retry loop
+                break
+            
     # Retry upload 5 times
     for i in range(5):
         try:
-            upload_file(fname, **conf['mattermost'])
+            upload_file(fname, **conf['mattermost'], failed=failed)
         except Exception as err:
             # Failed but we have retries left
             if i < 4:
@@ -165,14 +293,80 @@ def run_cost(cur, **kwargs):
         else:
             # Success, break from retry loop
             break
+        
+def run_life(cur, **kwargs):
+    args = kwargs['args']
+    provider = args.iaas
+    account_name = args.account
+    conf = kwargs['conf']
+    
+    # Grab all of our accounts optionally filter by provider name
+    cur.execute(sql.SQL('select iaas, name, cred from get_accounts({iaas});').format(
+        iaas = sql.Literal(provider),
+    ))
+    accounts = cur.fetchall()
+    
+    vms = {}
+    for account in accounts:
+        iaas = account['iaas']
+        name = account['name']
+        # Didn't add a specific account filter to the SQL
+        if account is not None and name != account_name:
+            continue
+        
+        try:
+            # Import module, try the life commmand
+            module = importlib.import_module("providers.{}".format(iaas))
+            
+            if hasattr(module, 'life'):
+                pvms = module.life(name, **account['cred'])
+                
+                if len(pvms) > 0:
+                    vms[iaas] = pvms
+
+        except:
+            # Don't really do anything other than print a message
+            print(f'Failed to run machine billing lifespan for provider {iaas}')
+            
+    if len(vms) > 0:
+        # Retry upload 5 times
+        for i in range(5):
+            try:
+                post_machines(vms, **conf['mattermost'])
+            except Exception as err:
+                # Failed but we have retries left
+                if i < 4:
+                    # Print and continue
+                    print(err)
+                    continue
+                else:
+                    # Retries exceeded, pass the exception up
+                    raise
+            else:
+                # Success, break from retry loop
+                break
 
 # Add a new account to the DB
 def add_account(cur, **kwargs):
     args = kwargs['args']
     provider = args.iaas
     account = args.account
-    # First check if provider module exists
-    # It doesn't we can't do anything
+    # Check if the iaas already exists in the DB
+    # if so just add it, if not try to locate its module and add a new provider
+    
+    cur.execute(sql.SQL('select get_iaas_id({iaas});').format(
+        iaas = sql.Literal(provider)
+    ))
+    
+    if cur.fetchone()[0] is None:
+        try:
+            module = importlib.import_module("providers.{}".format(provider))
+        except:
+            raise Exception(f'The provider {provider} does not have an implementation')
+        cur.execute(sql.SQL('select create_iaas({iaas});').format(
+            iaas = sql.Literal(provider)
+        ))
+    
     try:
         module = importlib.import_module("providers.{}".format(provider))
 
@@ -180,41 +374,16 @@ def add_account(cur, **kwargs):
         argspec = inspect.getfullargspec(module.cost)
         # argspec[0] is a list of names of standard arguments
         cols = argspec[0]
-
-        # Create the table if it doesn't exist
-        # Build arbritary query to insert table with columns that match our function
-        create = sql.SQL("create table if not exists {table} ({columns})").format(
-                table = sql.Identifier(provider),
-                # This one sucks, needs to nest to insert column datatype
-                columns = sql.SQL(',').join(map(lambda a: sql.SQL("{name} text").format(name=sql.Identifier(a)), cols))
-            )
-
-        # do the thing
-        cur.execute(create)
         
-        # Make sure account doesn't already exist
-        query = sql.SQL("select * from {table} where account_name = {account}").format(
-                table = sql.Identifier(provider),
-                account = sql.Literal(account)
-            )
-        
-        cur.execute(query)
-        if cur.fetchone() is not None:
-            print(f'{account} already exists in {provider}, use the update command to change credentials')
-            return
-
-        # prompt user for each argument we'll need for cost
-        vals = list(map(lambda a: getpass("{}: ".format(a)),
-                   filter(lambda a: a != 'account_name',cols))) # Skip prompting account_name
-        # Push our account_name onto the top
-        vals.insert(0, account)
+        cred = dict((f'{a}', getpass(f'{a}: ')) for a in filter(lambda a: a != 'account_name',cols))
 
         # Build arbritary insert using the psycopg2 sql extension
         # Need to convert everything into Identifier and Literal for this to work so map cols and vals
-        insert = sql.SQL("insert into {table}({columns}) VALUES ({values})").format(
-                table = sql.Identifier(provider),
-                columns = sql.SQL(',').join(map(lambda a: sql.Identifier(a), cols)),
-                values = sql.SQL(',').join(map(lambda a: sql.Literal(a), vals)))
+        insert = sql.SQL("select create_account({iaas}, {name}, {cred}, true);").format(
+                iaas = sql.Literal(provider),
+                name = sql.Literal(account),
+                cred = sql.Literal(psycopg2.extras.Json(cred))
+            )
 
         # Execute query and commit change
         cur.execute(insert)
@@ -242,36 +411,17 @@ def update_account(cur, **kwargs):
         # In this case just remove account_name from the list since we won't touch it
         cols = filter(lambda a: a != 'account_name', argspec[0])
         
-        # Make sure account exists
-        query = sql.SQL("select * from {table} where account_name = {account}").format(
-                table = sql.Identifier(provider),
-                account = sql.Literal(account)
+        cred = dict((f'{a}', getpass(f'{a}: ')) for a in filter(lambda a: a != 'account_name',cols))
+
+        # Build arbritary insert using the psycopg2 sql extension
+        # Need to convert everything into Identifier and Literal for this to work so map cols and vals
+        insert = sql.SQL("select create_account({iaas}, {name}, {cred}, false);").format(
+                iaas = sql.Literal(provider),
+                name = sql.Literal(account),
+                cred = sql.Literal(psycopg2.extras.Json(cred))
             )
         
-        cur.execute(query)
-        if cur.fetchone() is None:
-            print(f'{account} does not exist in {provider}, use the add add command')
-            return
-
-        # Update base query
-        update = sql.SQL("update {table} set {column} = {val} where account_name = {account}")
-        # Loop through each parameter and update the value
-        for col_name in cols:
-            # Format query
-            val = getpass("{}: ".format(col_name))
-            query = update.format(
-                table = sql.Identifier(provider),
-                column = sql.Identifier(col_name),
-                val = sql.Literal(val),
-                account = sql.Literal(account)
-            )
-
-            # Execute the query
-            cur.execute(query)
-
-            # Error check, ensure 1 row updated
-            if cur.rowcount != 1:
-                raise Exception(f"Insert failed: {query}")
+        cur.execute(insert)
 
     # For now die here, need to find what exceptions can be thrown here
     except BaseException as err:
@@ -289,42 +439,26 @@ def list_account(cur, **kwargs):
     args = kwargs['args']
     # List all providers implemented
     if args.type == 'providers':
-        # Get import spec for our providers package
-        spec = util.find_spec('providers')
-        # Grab its full path
-        pathname = Path(spec.origin).parent
-        # Scan entire directory for files ending with .py
-        # And exclude anything starting with __
-        with os.scandir(pathname) as entries:
-            for entry in entries:
-                if entry.name.startswith('__'):
-                    continue
-                current = entry.name.partition('.')[0]
-                if entry.is_file():
-                    if entry.name.endswith('.py'):
-                        print(current)
+        cur.execute('select get_iaas();')
+        for iaas in cur.fetchone()[0]:
+            print(iaas)
     # List of all accounts
     # Takes an optional --iaas argument, list of providers to list from
     elif args.type == 'accounts':
         # Grab a list of all tables in the DB (should be a list of provider names)
         # this is postgresql specific
-        cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+        query = sql.SQL('select iaas, name from get_accounts({iaas});').format(
+            iaas = sql.Literal(args.iaas)
+        )
+        cur.execute(query)
 
         # fetchall() will return us a dictionary of lists
         # we only want the first value of each list
-        tables = cur.fetchall()
-        providers = map(lambda a: a[0], tables)
-        # Filter by ones in our passed list (if we have one)
-        if args.iaas is not None:
-            providers = filter(lambda a: a in args.iaas, providers)
+        accounts = cur.fetchall()
         
         # Just loop through every row in every table as filtered above and print account_name
-        for provider in providers:
-            cur.execute("SELECT * FROM {}".format(provider))
-            rows = cur.fetchall()
-            
-            for row in rows:
-                print(f"{provider}: {row['account_name']}")
+        for account in accounts:
+            print(f"{account['iaas']}: {account['name']}")
 
 # Remove an account from the DB
 def remove_account(cur, **kwargs):
@@ -334,19 +468,85 @@ def remove_account(cur, **kwargs):
     # Wrap in a try block, no exceptions should ever be thrown here but in case
     try:
         # Build our query
-        query = sql.SQL("delete from {table} where account_name = {account}").format(
-            table = sql.Identifier(provider),
+        query = sql.SQL("select delete_account({provider},{account});").format(
+            provider = sql.Literal(provider),
             account = sql.Literal(account)
         )
         # Run, check # of rows deleted to check for success
         cur.execute(query)
-        if cur.rowcount <= 0:
-            print(f"Failed to remove {account} from {provider}")
-        else:
-            print(f"Success: {cur.statusmessage}")
+        print(f"Success: {cur.statusmessage}")
         cur.connection.commit()
     except Exception as err:
-        print(err)
+        print(f'{err=}, {type(err)=}')
+        
+def order_accounts(cur, **kwargs):
+    args = kwargs['args']
+    
+    cur.execute('select iaas, name from get_accounts();')
+    accounts = cur.fetchall()
+    
+    with open('/tmp/order.lst', 'w') as f:
+        for account in accounts:
+            f.write(f"{account['iaas']} | {account['name']}\n")
+    
+    cmd = os.environ.get('EDITOR', 'vi') + ' /tmp/order.lst'
+    subprocess.call(cmd, shell=True)
+    
+    with open('/tmp/order.lst', 'r') as f:
+        for i, line in enumerate(f.readlines()):
+            (iaas,name) = line.strip().replace(' ','').split('|')
+            cur.execute(sql.SQL('select set_order({iaas},{name},{order});').format(
+                iaas = sql.Literal(iaas),
+                name = sql.Literal(name),
+                order = sql.Literal(i)
+            ))
+            
+    print('Order set.')
+    cur.connection.commit()
+        
+def install(cur, **kwargs):    
+    cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> ANY('{accounts,iaas}');")
+    tables = cur.fetchall()
+    providers = filter(lambda a: a != 'accounts' and a != 'iaas', map(lambda a: a[0], tables))
+    
+    # Updated schema doesn't exist port everything
+    with open('schema.sql', 'r') as f:
+        cur.execute(f.read())
+            
+    # Get import spec for our providers package
+    spec = util.find_spec('providers')
+    pathname = Path(spec.origin).parent
+    with os.scandir(pathname) as entries:
+        for entry in entries:
+            if entry.name.startswith('__'):
+                continue
+            current = entry.name.partition('.')[0]
+            if entry.is_file():
+                if entry.name.endswith('.py'):
+                    cur.execute(f"select get_iaas_id('{current}');")
+                    if cur.fetchone()[0] is None:
+                        cur.execute(f"select create_iaas('{current}');")
+
+#    # Port the old account storage to our new schema
+#    for provider in providers:
+#        cur.execute("SELECT * FROM {}".format(provider))
+#        rows = cur.fetchall()
+#
+#        for row in rows:
+#            account_name = ""
+#            cred = {}
+#            for key in row.keys():
+#                if key=='account_name':
+#                    account_name = row[key]
+#                else:
+#                    cred[key] = row[key]
+#            cur.execute(f"select count(*) = 0 from accounts where (iaas_id = get_iaas_id('{provider}')) and (name = '{account_name}');")
+#            if cur.fetchone()[0]:
+#                cur.execute(
+#                    f"select create_account('{provider}','{account_name}',%s,true);",
+#                    [psycopg2.extras.Json(cred)])
+        
+    cur.connection.commit()
 
 def main(args):
     # Connect to our postgres database
@@ -390,12 +590,21 @@ if __name__ == '__main__':
     # Parse our arguments
     parser = argparse.ArgumentParser()
     parser.set_defaults(func=run_cost)
+    parser.add_argument('--nopost', help='do not post to MM', action='store_true')
     subparsers = parser.add_subparsers(help='sub-commands, type <command> --help to get more information')
+    
+    sub_cost = subparsers.add_parser('cost', help='runs the cost function and posts to MM')
+    sub_cost.set_defaults(func=run_cost)
+    
+    sub_life = subparsers.add_parser('life', help='runs a check on the previous invoice and alerts for things alive longer than a time')
+    sub_life.add_argument('--iaas', action='extend', nargs='+', type=str, required=False, help='optional list of providers to list accounts from')
+    sub_life.add_argument('--account', type=str, required=False, help='single account to run this against')
+    sub_life.set_defaults(iaas=None, func=run_life)
     
     sub_list = subparsers.add_parser('list', help='list accounts or providers')
     sub_list.add_argument('type', choices=['accounts', 'providers'], help='the item to list')
     sub_list.add_argument('--iaas', action='extend', nargs='+', type=str, required=False, help='optional list of providers to list accounts from')
-    sub_list.set_defaults(func=list_account)
+    sub_list.set_defaults(iaas=None, func=list_account)
     
     sub_update = subparsers.add_parser('update', help='update an exist account\'s credentials')
     sub_update.add_argument('--iaas', type=str, required=True, help='iaas to modify account in')
@@ -411,6 +620,12 @@ if __name__ == '__main__':
     sub_remove.add_argument('--iaas', type=str, required=True, help='iaas to remove account from')
     sub_remove.add_argument('--account', type=str, required=True, help='account name to remove')
     sub_remove.set_defaults(func=remove_account)
+    
+    sub_order = subparsers.add_parser('order', help='set the ordering of accounts')
+    sub_order.set_defaults(func=order_accounts)
+    
+    sub_install = subparsers.add_parser('install')
+    sub_install.set_defaults(func=install)
 
     args = parser.parse_args()
 

@@ -65,8 +65,7 @@ def NextBilling(account_name, api_key) -> CostItem:
     x = requests.get(api_getNextInvoiceTopLevel, auth=auth, params=paramsTopLevel)
     topLevel = json.loads(x.text)
     if not x.ok:
-        raise Exception(f'Softlayer {account_name}: getNextInvoiceTopLevel Failed:\n\
-            {json.dumps(topLevel, indent=4)}')
+        raise Exception(f'getNextInvoiceTopLevel Failed:\n{json.dumps(topLevel, indent=4)}')
     startDate = topLevel[0]['cycleStartDate']
     endDate = topLevel[0]['nextBillDate']
 
@@ -84,8 +83,7 @@ def NextBilling(account_name, api_key) -> CostItem:
         x = requests.get(api_getChildren.format(id=item['id']), auth=auth, params=paramsChildren)
         children = json.loads(x.text)
         if not x.ok:
-            raise Exception(f'Softlayer {account_name}: getChildren Failed:\n\
-                {json.dumps(children, indent=4)}')
+            raise Exception(f'getChildren Failed:\n{json.dumps(children, indent=4)}')
         for child in children:
             total += float(child['recurringFee'])
 
@@ -116,8 +114,7 @@ def PrevBilling(account_name, api_key) -> CostItem:
     x = requests.get(api_getPrevInvoice, auth=auth)
     js = json.loads(x.text)
     if not x.ok:
-        raise Exception(f'Softlayer {account_name}: getPrevInvoice Failed:\n\
-            {json.dumps(js, indent=4)}')
+        raise Exception(f'getPrevInvoice Failed:\n{json.dumps(js, indent=4)}')
     # Need id and invoice creation date (billing period end date)
     invoice = js['id']
     endDate = js['createDate']
@@ -126,8 +123,7 @@ def PrevBilling(account_name, api_key) -> CostItem:
     x = requests.get(api_getInvoiceTopLevel.format(id=invoice), auth=auth, params=paramsTopLevel)
     topLevel = json.loads(x.text)
     if not x.ok:
-        raise Exception(f'Softlayer {account_name}: getPrevInvoice Failed:\n\
-            {json.dumps(js, indent=4)}')
+        raise Exception(f'getPrevInvoice Failed:\n{json.dumps(js, indent=4)}')
 
     # Mask for calls to getChildren
     paramsChildren = {
@@ -141,8 +137,7 @@ def PrevBilling(account_name, api_key) -> CostItem:
         x = requests.get(api_getInvoiceChildren.format(id=item['id']), auth=auth, params=paramsChildren)
         children = json.loads(x.text)
         if not x.ok:
-            raise Exception(f'Softlayer {account_name}: getChildren Failed:\n\
-                {json.dumps(children, indent=4)}')
+            raise Exception(f'getChildren Failed:\n{json.dumps(children, indent=4)}')
         for child in children:
             total += float(child['recurringFee'])
 
