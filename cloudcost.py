@@ -57,6 +57,10 @@ def upload_file(file, server, channel_id, token, failed):
             'message': '\n### Today\'s cloud cost!',
             'file_ids': [upload_id]
         }
+    
+    # Loop and add every errored provider
+    for account in failed:
+        payload['message'] += f"\t{account['iaas']}: {account['name']}\n"
 
     # Post the file
     print("Done.")
