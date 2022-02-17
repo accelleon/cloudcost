@@ -176,9 +176,10 @@ def run_cost(cur, **kwargs):
     # Set up our workbook
     wb, ws, i = create_xlsx()
 
-    # Grab a list of all tables in the DB (should be a list of provider names)
-    # this is postgresql specific
-    cur.execute("select iaas, name, cred, enable from get_accounts();")
+    query = sql.SQL('select iaas, name, cred, enable from get_accounts({iaas});').format(
+            iaas = sql.Literal([args.iaas] if 'iaas' in args else None)
+        )
+    cur.execute(query)
 
     # fetchall() will return us a dictionary of lists
     accounts = cur.fetchall()
@@ -189,6 +190,11 @@ def run_cost(cur, **kwargs):
     for account in accounts:
         provider = account['iaas']
         name = account['name']
+        
+        # Skip if this isn't the account we want
+        if 'account' in args and args.account != name:
+            continue
+        
         # Skip if account disabled
         if not account['enable']:
             print(f'Skipping account {provider} - {name}')
@@ -221,8 +227,8 @@ def run_cost(cur, **kwargs):
             for cost in costs:
                 ws[f'A{i}'] = provider
                 # Split the string, if it contains more than a date, we only want the date
-                ws[f'B{i}'] = cost.startDate[:10]
-                ws[f'C{i}'] = cost.endDate[:10]
+                ws[f'B{i}'] = cost.startDate[:10] if cost.startDate else None
+                ws[f'C{i}'] = cost.endDate[:10] if cost.endDate else None
                 ws[f'D{i}'] = name
                 ws[f'E{i}'] = f"{round(float(cost.cost), 2):.2f}"
                 ws[f'F{i}'] = cost.balance
@@ -599,6 +605,8 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers(help='sub-commands, type <command> --help to get more information')
     
     sub_cost = subparsers.add_parser('cost', help='runs the cost function and posts to MM')
+    sub_cost.add_argument('--iaas', type=str, required=False, help='iaas to modify account in')
+    sub_cost.add_argument('--account', type=str, required=False, help='account to modify')
     sub_cost.set_defaults(func=run_cost)
     
     sub_life = subparsers.add_parser('life', help='runs a check on the previous invoice and alerts for things alive longer than a time')

@@ -115,6 +115,11 @@ def PrevBilling(account_name, api_key) -> CostItem:
     js = json.loads(x.text)
     if not x.ok:
         raise Exception(f'getPrevInvoice Failed:\n{json.dumps(js, indent=4)}')
+    
+    # Bluemix/softlayer return an empty response if there isn't one
+    if not js:
+        return None
+    
     # Need id and invoice creation date (billing period end date)
     invoice = js['id']
     endDate = js['createDate']
@@ -145,8 +150,10 @@ def PrevBilling(account_name, api_key) -> CostItem:
 
 # Do the cost thing
 def cost(account_name, api_key) -> "list[CostItem]":
+    prev = PrevBilling(account_name, api_key)
     ret = [
         NextBilling(account_name, api_key),
-        PrevBilling(account_name, api_key)
     ]
+    if prev:
+        ret.append(prev)
     return ret
