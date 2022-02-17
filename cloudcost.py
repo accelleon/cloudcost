@@ -57,10 +57,6 @@ def upload_file(file, server, channel_id, token, failed):
             'message': '\n### Today\'s cloud cost!',
             'file_ids': [upload_id]
         }
-    
-    # Loop and add every errored provider
-    for account in failed:
-        payload['message'] += f"\t{account['iaas']}: {account['name']}\n"
 
     # Post the file
     print("Done.")
@@ -182,7 +178,7 @@ def run_cost(cur, **kwargs):
 
     # Grab a list of all tables in the DB (should be a list of provider names)
     # this is postgresql specific
-    cur.execute("select iaas, name, cred from get_accounts();")
+    cur.execute("select iaas, name, cred, enable from get_accounts();")
 
     # fetchall() will return us a dictionary of lists
     accounts = cur.fetchall()
@@ -193,6 +189,11 @@ def run_cost(cur, **kwargs):
     for account in accounts:
         provider = account['iaas']
         name = account['name']
+        # Skip if account disabled
+        if not account['enable']:
+            print(f'Skipping account {provider} - {name}')
+            continue
+    
         try:
             # Import a module named with the provider from the providers directory
             module = importlib.import_module("providers.{}".format(provider))

@@ -94,7 +94,8 @@ $$ language plpgsql;
 create or replace function get_accounts(iaas_var text[] default null) returns table(
     iaas text,
     name text,
-    cred json
+    cred json,
+    enable bool
 ) as $$
 declare i text;
 begin
@@ -110,7 +111,8 @@ begin
         select
             i.name,
             a.name,
-            a.cred
+            a.cred,
+            a.enable
         from accounts as a
         left join iaas as i
         on a.iaas_id = i.id
@@ -140,5 +142,26 @@ begin
     update accounts set orderi = (orderi+1) where orderi >= order_var;
 
     update accounts set orderi = order_var where iaas_id = iaas_id_var and name = name_var;
+end;
+$$ language plpgsql;
+
+create or replace function enable_account(
+    iaas_var text,
+    name_var text,
+    enable_var bool
+) returns void as $$
+declare
+iaas_id_var integer;
+begin
+    select get_iaas_id(iaas_var) into iaas_id_var;
+    if iaas_id_var is null then
+        raise exception '% is not a valid provider', iaas_var;
+    end if;
+
+    if (select count(*) = 0 from accounts where iaas_id = iaas_id_var and name = name_var) then
+        raise exception '% is not a valid account in provider %', name_var, iaas_var;
+    end if;
+
+    update accounts set enable=enable_var where iaas_id = iaas_id_var and name = name_var;
 end;
 $$ language plpgsql;
