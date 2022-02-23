@@ -29,7 +29,7 @@ def cost(account_name, password) -> 'list[CostItem]':
     if not x.ok:
         raise Exception(f'failed to retreive balance {x}')
     js = json.loads(x.text)
-    balance = js['balance']
+    balance = f'{js['balance']} USD'
 
     
     # Query parameters, filter by what we want
