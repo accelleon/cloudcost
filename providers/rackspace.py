@@ -77,9 +77,9 @@ def life(account_name, api_key, billing_number) -> "dict":
     })
     # Do the auth
     x = requests.post(auth_endpoint, headers = headers, data = data)
-    js = json.loads(x.text)
     if not x.ok:
-        raise Exception(f'auth failure: {json.dumps(js,indent=4)}')
+        raise Exception(f'auth failure: {x.text}')
+    js = json.loads(x.text)
     token = js['access']['token']['id']
 
     # Form the request for our latest invoice
@@ -91,6 +91,8 @@ def life(account_name, api_key, billing_number) -> "dict":
     x = requests.get(latest_invoice_endpoint.format(ran=billing_number), headers = headers)
     if not x.ok:
         raise Exception(f'unable to get latest invoice: {x.text}')
+    if x.status_code == 204:
+        raise Exception(f'Latest invoice not available')
     js = json.loads(x.text)
     invoiceId = js['invoice']['id']
 

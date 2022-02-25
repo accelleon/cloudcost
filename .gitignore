@@ -1,4 +1,5 @@
 providers/__pycache__
+providers/common/__pycache__
 workspace.code-workspace
 cloudcost.conf
 cloudcost.log

@@ -233,7 +233,7 @@ def run_cost(cur, **kwargs):
                     if len(pvms) > 0:
                         vms[account] = pvms
             except Exception as err:
-                print(f"Failed to run life() on {provider}{name}: {err}")
+                print(f"Failed to run life() on {provider} {name}: {err}")
 
             # Spill to excel
             # Since we now return a list of CostItems to accomodate for
@@ -296,7 +296,7 @@ def run_life(cur, **kwargs):
         iaas = account['iaas']
         name = account['name']
         # Didn't add a specific account filter to the SQL
-        if account is not None and name != account_name:
+        if account_name is not None and name != account_name:
             continue
         
         try:
@@ -304,16 +304,19 @@ def run_life(cur, **kwargs):
             module = importlib.import_module("providers.{}".format(iaas))
             
             if hasattr(module, 'life'):
+                print(f'Checking {name}...')
                 pvms = module.life(name, **account['cred'])
                 
                 if pvms:
                     vms[iaas] = pvms
 
-        except:
+        except Exception as err:
             # Don't really do anything other than print a message
-            print(f'Failed to run machine billing lifespan for provider {iaas}')
-            
-    if vms:
+            print(f'Failed to run machine billing lifespan for provider {iaas} {err}')
+    if args.nopost:
+        print('Not Posting.')
+        print(json.dumps(vms))
+    elif vms:
         retry(post_machines, vms, **conf['mattermost'])
 
 # Add a new account to the DB
