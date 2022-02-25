@@ -9,6 +9,7 @@ create table if not exists accounts(
     name text,
     cred json,
     orderi int,
+    enable bool not null default true,
     constraint iaas_unique unique(iaas_id, name),
     constraint iaas_fk foreign key(iaas_id) references iaas(id)
 );

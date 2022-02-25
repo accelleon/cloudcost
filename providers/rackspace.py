@@ -21,17 +21,17 @@ def cost(account_name, api_key, billing_number) -> "list[CostItem]":
     }
 
     # Post data, build json object
-    data = json.dumps({
+    data = {
         'auth': {
             'RAX-KSKEY:apiKeyCredentials' : {
                 'username': account_name,
                 'apiKey': api_key
             }
         }
-    })
+    }
 
     # Do the auth
-    x = requests.post(auth_endpoint, headers = headers, data = data)
+    x = requests.post(auth_endpoint, headers = headers, json = data)
     js = json.loads(x.text)
     if not x.ok:
         raise Exception(f'auth failure:\n{json.dumps(js,indent=4)}')

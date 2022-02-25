@@ -47,8 +47,7 @@ def upload_file(file, server, channel_id, token, failed):
     x = requests.post(f'{server}/api/v4/files', headers=headers, params=payload, data=open(file, 'rb'))
     js = json.loads(x.text)
     if not x.ok:
-        raise(f'Failed to upload {file}. Response:\n\
-            {json.dumps(js,indent=4)}')
+        raise Exception(f'Failed to upload {file}. Response:\n{json.dumps(js,indent=4)}')
     upload_id = js['file_infos'][0]['id']
 
     # Payload for post, attach the file we just uploaded
@@ -62,8 +61,7 @@ def upload_file(file, server, channel_id, token, failed):
     print("Done.")
     x = requests.post(f'{server}/api/v4/posts', headers=headers, json=payload)
     if not x.ok:
-        raise(f'Failed to post message. Response:\n\
-            {json.dumps(x.json(),indent=4)}')
+        raise Exception(f'Failed to post message. Response:\n{json.dumps(x.json(),indent=4)}')
         
 def post_machines(providers, server, channel_id, token):
     # Simple auth header
@@ -102,8 +100,7 @@ def post_machines(providers, server, channel_id, token):
     
     x = requests.post(f'{server}/api/v4/posts', headers=headers, json=payload)
     if not x.ok:
-        raise(f'Failed to post message. Response:\n\
-            {json.dumps(x.json(),indent=4)}')
+        raise Exception(f'Failed to post message. Response:\n{json.dumps(x.json(),indent=4)}')
         
 def post_failures(failures, server, channel_id, token):
     # Auth headers
@@ -138,9 +135,28 @@ def post_failures(failures, server, channel_id, token):
     
     x = requests.post(f'{server}/api/v4/posts', headers=headers, json=payload)
     if not x.ok:
-        raise(f'Failed to post message. Response:\n\
-            {json.dumps(x.json(),indent=4)}')
+        raise Exception(f'Failed to post message. Response:\n{json.dumps(x.json(),indent=4)}')
+
+# Quick function to retry something 5 times
+def retry(func, *args, **kwargs):
+    for i in range(5):
+        try:
+            func(*args, **kwargs)
+        except Exception as err:
+            # Failed but we have retries left
+            if i < 4:
+                # Print and continue
+                print(err)
+                continue
+            else:
+                # Retries exceeded, pass the exception up
+                raise
+        else:
+            # Success, break from retry loop
+            break
+
 # Creates some headers for the excel sheet
+# Returns the workbook, worksheet and starting row
 def create_xlsx():
     # Workbook object
     wb = Workbook()
@@ -174,7 +190,7 @@ def run_cost(cur, **kwargs):
         print('Not Posting.')
     
     # Set up our workbook
-    wb, ws, i = create_xlsx()
+    wb, ws, row = create_xlsx()
 
     query = sql.SQL('select iaas, name, cred, enable from get_accounts({iaas});').format(
             iaas = sql.Literal([args.iaas] if 'iaas' in args else None)
@@ -209,7 +225,7 @@ def run_cost(cur, **kwargs):
             
             # Wrap in another try block so we don't kill cost if this fails
             try:
-                # Only run if start of new billing cycle
+                # Only run if this provider has this implemented and start of new billing cycle
                 today = datetime.utcnow().isoformat()
                 if hasattr(module, 'life') and cost.startDate[:10] == today[:10]:
                     pvms = module.life(name, **account['cred'])
@@ -225,14 +241,14 @@ def run_cost(cur, **kwargs):
             # periods, loop through the list of CostItems returned
             # TODO: Gotta be a neater way to do this
             for cost in costs:
-                ws[f'A{i}'] = provider
+                ws[f'A{row}'] = provider
                 # Split the string, if it contains more than a date, we only want the date
-                ws[f'B{i}'] = cost.startDate[:10] if cost.startDate else None
-                ws[f'C{i}'] = cost.endDate[:10] if cost.endDate else None
-                ws[f'D{i}'] = name
-                ws[f'E{i}'] = f"{round(float(cost.cost), 2):.2f}"
-                ws[f'F{i}'] = cost.balance
-                i = i + 1
+                ws[f'B{row}'] = cost.startDate[:10] if cost.startDate else None
+                ws[f'C{row}'] = cost.endDate[:10] if cost.endDate else None
+                ws[f'D{row}'] = name
+                ws[f'E{row}'] = f"{round(float(cost.cost), 2):.2f}"
+                ws[f'F{row}'] = cost.balance
+                row = row + 1
 
                 print("{} total cost to month is {}".format(name, cost))
 
@@ -251,59 +267,17 @@ def run_cost(cur, **kwargs):
         return
 
     # Try posting our failed accounts
-    if len(failed) > 0:
+    if failed:
         # Retry upload 5 times
-        for i in range(5):
-            try:
-                post_failures(failed, **conf['mattermost'])
-            except Exception as err:
-                # Failed but we have retries left
-                if i < 4:
-                    # Print and continue
-                    print(err)
-                    continue
-                else:
-                    # Retries exceeded, pass the exception up
-                    raise
-            else:
-                # Success, break from retry loop
-                break
+        retry(post_failures, failed, **conf['mattermost'])
         
     # Try posting our VM lifetimes
-    if len(vms) > 0:
+    if vms:
         # Retry upload 5 times
-        for i in range(5):
-            try:
-                post_machines(vms, **conf['mattermost'])
-            except Exception as err:
-                # Failed but we have retries left
-                if i < 4:
-                    # Print and continue
-                    print(err)
-                    continue
-                else:
-                    # Retries exceeded, pass the exception up
-                    raise
-            else:
-                # Success, break from retry loop
-                break
+        retry(post_machines, vms, **conf['mattermost'])
             
     # Retry upload 5 times
-    for i in range(5):
-        try:
-            upload_file(fname, **conf['mattermost'], failed=failed)
-        except Exception as err:
-            # Failed but we have retries left
-            if i < 4:
-                # Print and continue
-                print(err)
-                continue
-            else:
-                # Retries exceeded, pass the exception up
-                raise
-        else:
-            # Success, break from retry loop
-            break
+    retry(upload_file, fname, **conf['mattermost'], failed=failed)
         
 def run_life(cur, **kwargs):
     args = kwargs['args']
@@ -332,30 +306,15 @@ def run_life(cur, **kwargs):
             if hasattr(module, 'life'):
                 pvms = module.life(name, **account['cred'])
                 
-                if len(pvms) > 0:
+                if pvms:
                     vms[iaas] = pvms
 
         except:
             # Don't really do anything other than print a message
             print(f'Failed to run machine billing lifespan for provider {iaas}')
             
-    if len(vms) > 0:
-        # Retry upload 5 times
-        for i in range(5):
-            try:
-                post_machines(vms, **conf['mattermost'])
-            except Exception as err:
-                # Failed but we have retries left
-                if i < 4:
-                    # Print and continue
-                    print(err)
-                    continue
-                else:
-                    # Retries exceeded, pass the exception up
-                    raise
-            else:
-                # Success, break from retry loop
-                break
+    if vms:
+        retry(post_machines, vms, **conf['mattermost'])
 
 # Add a new account to the DB
 def add_account(cur, **kwargs):
@@ -514,50 +473,6 @@ def order_accounts(cur, **kwargs):
             
     print('Order set.')
     cur.connection.commit()
-        
-def install(cur, **kwargs):    
-    cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> ANY('{accounts,iaas}');")
-    tables = cur.fetchall()
-    providers = filter(lambda a: a != 'accounts' and a != 'iaas', map(lambda a: a[0], tables))
-    
-    # Updated schema doesn't exist port everything
-    with open('schema.sql', 'r') as f:
-        cur.execute(f.read())
-            
-    # Get import spec for our providers package
-    spec = util.find_spec('providers')
-    pathname = Path(spec.origin).parent
-    with os.scandir(pathname) as entries:
-        for entry in entries:
-            if entry.name.startswith('__'):
-                continue
-            current = entry.name.partition('.')[0]
-            if entry.is_file():
-                if entry.name.endswith('.py'):
-                    cur.execute(f"select get_iaas_id('{current}');")
-                    if cur.fetchone()[0] is None:
-                        cur.execute(f"select create_iaas('{current}');")
-
-#    # Port the old account storage to our new schema
-#    for provider in providers:
-#        cur.execute("SELECT * FROM {}".format(provider))
-#        rows = cur.fetchall()
-#
-#        for row in rows:
-#            account_name = ""
-#            cred = {}
-#            for key in row.keys():
-#                if key=='account_name':
-#                    account_name = row[key]
-#                else:
-#                    cred[key] = row[key]
-#            cur.execute(f"select count(*) = 0 from accounts where (iaas_id = get_iaas_id('{provider}')) and (name = '{account_name}');")
-#            if cur.fetchone()[0]:
-#                cur.execute(
-#                    f"select create_account('{provider}','{account_name}',%s,true);",
-#                    [psycopg2.extras.Json(cred)])
-        
-    cur.connection.commit()
 
 def main(args):
     # Connect to our postgres database
@@ -636,9 +551,6 @@ if __name__ == '__main__':
     
     sub_order = subparsers.add_parser('order', help='set the ordering of accounts')
     sub_order.set_defaults(func=order_accounts)
-    
-    sub_install = subparsers.add_parser('install')
-    sub_install.set_defaults(func=install)
 
     args = parser.parse_args()
 

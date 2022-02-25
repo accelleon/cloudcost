@@ -60,7 +60,6 @@ def NextBilling(account_name, api_key) -> CostItem:
     }
 
     total = 0
-    a = None
 
     # Loop through every top level item and pull the cost for its children
     for item in topLevel:

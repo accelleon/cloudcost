@@ -1,4 +1,3 @@
-import json
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
@@ -42,7 +41,7 @@ def cost(account_name, endpoint, app_key, app_secret, consumer_key):
     
     nextBilling = usage[0]['price']['value']
     
-    # OVH will return this is a bloody RANDOM order
+    # OVH will return this in a bloody RANDOM order
     # and has no endpoint for the latest bill
     # loop through all of them and compare the dates
     bills = client.get('/me/bill')
@@ -73,7 +72,7 @@ def cost(account_name, endpoint, app_key, app_secret, consumer_key):
     if prevBilling:
         ret.append(CostItem(
             prevBilling['priceWithTax']['value'],
-            None,
+            '',
             prevBilling['date']
         ))
     
