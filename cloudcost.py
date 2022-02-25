@@ -195,7 +195,6 @@ def run_cost(cur, **kwargs):
     query = sql.SQL('select iaas, name, cred, enable from get_accounts({iaas});').format(
             iaas = sql.Literal([args.iaas] if 'iaas' in args and args.iaas else None)
         )
-    print(query)
     cur.execute(query)
 
     # fetchall() will return us a dictionary of lists
@@ -228,10 +227,10 @@ def run_cost(cur, **kwargs):
             try:
                 # Only run if this provider has this implemented and start of new billing cycle
                 today = datetime.utcnow().isoformat()
-                if hasattr(module, 'life') and cost.startDate[:10] == today[:10]:
+                if hasattr(module, 'life') and costs[0].startDate[:10] == today[:10]:
                     pvms = module.life(name, **account['cred'])
                 
-                    if len(pvms) > 0:
+                    if pvms:
                         vms[account] = pvms
             except Exception as err:
                 print(f"Failed to run life() on {provider} {name}: {err}")
