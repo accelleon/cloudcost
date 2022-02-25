@@ -2,9 +2,12 @@
 # Bit of setup for the DB and python
 
 # Grab required packages
-sudo apt-get install postgresql python3 python3-pip unzip -y
+sudo apt-get install postgresql python3 python3-pip python3-venv unzip -y
 # Update pip to latest version
 python3 -m pip install pip -U
+# Create and source a venv
+python3 -m venv venv
+source ./venv/bin/activate
 # Grab required python dependencies
 python3 -m pip install install psycopg2-binary python-dateutil openpyxl ovh
 # Generate our DB password
@@ -31,7 +34,7 @@ sudo -u postgres `psql -d postgres -c "grant all privileges on database cloudcos
 
 sudo -u postgres `psql -d postgres -c "grant all privileges on all tables in schema public to cloudcost;"`
 
-python3 ./cloudcost.py install
+sudo -u postgres `psql -d cloudcost < ./schema.sql
 
 # Install AWS Cli
 mkdir aws
