@@ -15,3 +15,22 @@ from providers.base import CostItem
 def cost(account_name) -> "list[CostItem]":
     return [CostItem("0.15", "YYYY-MM-DD", "YYYY-MM-DD")]
 ```
+
+Providers may implement an optional life() function. This function is to return machines billed for what’s deemed an unreasonable time. The arguments are the same as cost()
+
+```python
+def life(account_name: str, api_key) -> "dict":
+```
+
+The function should return a dictionary of the format:
+
+```python
+{
+  'vm-name': {
+    'hours': float, # Hours machine has been alive
+    'bill': str, # Invoice/bill no. the machine was billed on
+    'account': str, # The account this machine was billed on
+  },
+  ...
+}
+```
