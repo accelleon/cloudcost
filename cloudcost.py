@@ -193,8 +193,9 @@ def run_cost(cur, **kwargs):
     wb, ws, row = create_xlsx()
 
     query = sql.SQL('select iaas, name, cred, enable from get_accounts({iaas});').format(
-            iaas = sql.Literal([args.iaas] if 'iaas' in args else None)
+            iaas = sql.Literal([args.iaas] if 'iaas' in args and args.iaas else None)
         )
+    print(query)
     cur.execute(query)
 
     # fetchall() will return us a dictionary of lists
@@ -208,7 +209,7 @@ def run_cost(cur, **kwargs):
         name = account['name']
         
         # Skip if this isn't the account we want
-        if 'account' in args and args.account != name:
+        if 'account' in args and args.account and args.account != name:
             continue
         
         # Skip if account disabled
