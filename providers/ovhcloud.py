@@ -1,5 +1,6 @@
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import json
 
 # OVH does some unique shit like signing API requests so cave to their SDK
 import ovh
@@ -30,7 +31,9 @@ def cost(account_name, endpoint, app_key, app_secret, consumer_key):
     if usage is None:
         raise Exception(f'/me/consumption/usage/forecast failed')
     # If its an empty array we've got no expected cost
-    if not usage:
+    try:
+        nextBilling = usage[0]['price']['value']
+    except TypeError:
         return [
             CostItem(
                 0,
@@ -38,8 +41,8 @@ def cost(account_name, endpoint, app_key, app_secret, consumer_key):
                 datetime.today().isoformat()
             )
         ]
-    
-    nextBilling = usage[0]['price']['value']
+    except Exception:
+        raise
     
     # OVH will return this in a bloody RANDOM order
     # and has no endpoint for the latest bill
