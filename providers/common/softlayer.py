@@ -51,8 +51,12 @@ def NextBilling(filter, account_name, api_key) -> CostItem:
     topLevel = json.loads(x.text)
     if not x.ok:
         raise Exception(f'getNextInvoiceTopLevel Failed:\n{json.dumps(topLevel, indent=4)}')
-    startDate = topLevel[0]['cycleStartDate']
-    endDate = topLevel[0]['nextBillDate']
+    
+    startDate = None
+    endDate = None
+    if topLevel:
+        startDate = topLevel[0]['cycleStartDate']
+        endDate = topLevel[0]['nextBillDate']
 
     # Mask for calls to getChildren
     paramsChildren = {

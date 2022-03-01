@@ -59,7 +59,7 @@ def cost(account_name, password, subscription, client_id, tenant_id) -> "list[Co
         [total := total + i['properties']['paygCostInUSD'] for i in js['value']]
         
         # If we haven't grabbed the billing start and end dates do so now
-        if startDate is None:
+        if startDate is None and js['value']:
             startDate = js['value'][0]['properties']['servicePeriodStartDate']
             endDate = js['value'][0]['properties']['servicePeriodEndDate']
 
