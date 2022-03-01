@@ -243,8 +243,8 @@ def run_cost(cur, **kwargs):
             for cost in costs:
                 ws[f'A{row}'] = provider
                 # Split the string, if it contains more than a date, we only want the date
-                ws[f'B{row}'] = cost.startDate[:10] if cost.startDate else None
-                ws[f'C{row}'] = cost.endDate[:10] if cost.endDate else None
+                ws[f'B{row}'] = cost.startDate[:10] if cost.startDate else ''
+                ws[f'C{row}'] = cost.endDate[:10] if cost.endDate else ''
                 ws[f'D{row}'] = name
                 ws[f'E{row}'] = f"{round(float(cost.cost), 2):.2f}"
                 ws[f'F{row}'] = cost.balance
