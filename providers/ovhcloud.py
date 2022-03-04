@@ -33,7 +33,7 @@ def cost(account_name, endpoint, app_key, app_secret, consumer_key):
     # If its an empty array we've got no expected cost
     try:
         nextBilling = usage[0]['price']['value']
-    except TypeError:
+    except (TypeError, IndexError):
         return [
             CostItem(
                 0,
